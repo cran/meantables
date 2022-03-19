@@ -2,14 +2,14 @@
 #'
 #' @description The mean_table function produces overall and grouped
 #'   tables of means with related statistics. In addition to means, the
-#'   mean_table missing/non-missing frequencies, the standared error of the
+#'   mean_table missing/non-missing frequencies, the standard error of the
 #'   mean (sem), the 95% confidence intervals for the mean(s), the minimum
 #'   value, and the maximum value. For grouped tibbles, mean_table displays
 #'   these statistics for each category of the group_by variable.
 #'
 #' @param .data A tibble or grouped tibble.
 #'
-#' @param x The continuous response variable for which the statistics are
+#' @param .x The continuous response variable for which the statistics are
 #'   desired.
 #'
 #' @param t_prob (1 - alpha / 2). Default value is 0.975, which corresponds to
@@ -20,7 +20,7 @@
 #'
 #'   Default output includes the n, mean, sem, and 95% confidence interval for
 #'   the mean. Using output = "all" also returns the the number of missing
-#'   values for x and the critical t-value.
+#'   values for .x and the critical t-value.
 #'
 #' @param digits Round mean, lcl, and ucl to digits. Default is 2.
 #'
@@ -34,6 +34,7 @@
 #'   SAS documentation: http://support.sas.com/documentation/cdl/en/proc/65145/HTML/default/viewer.htm#p0klmrp4k89pz0n1p72t0clpavyx.htm
 #'
 #' @examples
+#' \dontrun{
 #' library(dplyr)
 #' library(meantables)
 #'
@@ -44,10 +45,10 @@
 #' mtcars %>%
 #'   mean_table(mpg)
 #'
-#' #> # A tibble: 1 x 8
-#' #>   response_var     n  mean      sem   lcl   ucl   min   max
-#' #>          <chr> <int> <dbl>    <dbl> <dbl> <dbl> <dbl> <dbl>
-#' #> 1          mpg    32 20.09 1.065424 17.92 22.26  10.4  33.9
+#' # A tibble: 1 x 9
+#'   response_var     n  mean    sd   sem   lcl   ucl   min   max
+#'   <chr>        <int> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
+#' 1 mpg             32  20.1  6.03  1.07  17.9  22.3  10.4  33.9
 #'
 #' # Grouped means table with defaults
 #'
@@ -55,26 +56,27 @@
 #'   group_by(cyl) %>%
 #'   mean_table(mpg)
 #'
-#' #> # A tibble: 3 x 10
-#' #>   response_var group_var group_cat     n  mean       sem   lcl   ucl   min   max
-#' #>          <chr>     <chr>     <dbl> <int> <dbl>     <dbl> <dbl> <dbl> <dbl> <dbl>
-#' #> 1          mpg       cyl         4    11 26.66 1.3597642 23.63 29.69  21.4  33.9
-#' #> 2          mpg       cyl         6     7 19.74 0.5493967 18.40 21.09  17.8  21.4
-#' #> 3          mpg       cyl         8    14 15.10 0.6842016 13.62 16.58  10.4  19.2
+#' # A tibble: 3 x 11
+#'   response_var group_var group_cat     n  mean    sd   sem   lcl   ucl   min   max
+#'   <chr>        <chr>         <dbl> <int> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
+#' 1 mpg          cyl               4    11  26.7  4.51 1.36   23.6  29.7  21.4  33.9
+#' 2 mpg          cyl               6     7  19.7  1.45 0.549  18.4  21.1  17.8  21.4
+#' 3 mpg          cyl               8    14  15.1  2.56 0.684  13.6  16.6  10.4  19.2
+#' }
 
-mean_table <- function(.data, x, t_prob = 0.975, output = default, digits = 2, ...) {
+mean_table <- function(.data, .x, t_prob = 0.975, output = default, digits = 2, ...) {
 
   # ------------------------------------------------------------------
   # Prevents R CMD check: "no visible binding for global variable ‘.’"
   # ------------------------------------------------------------------
-  n = t_crit = sem = lcl = ucl = var = n_groups = group_1 = NULL
+  n = sd = t_crit = sem = lcl = ucl = var = n_groups = group_1 = NULL
   group_2 = output_arg = default = response_var = `.` = NULL
   group_var = group_cat = group_1_cat = group_2_cat = n_miss = NULL
 
   # ===========================================================================
   # Quick data checks
   # Input data frame is class data.frame
-  # The "x" argument is a numeric vector
+  # The ".x" argument is a numeric vector
   # There are zero, one, or two group_by variables
   # ===========================================================================
   if (!("data.frame" %in% class(.data))) {
@@ -82,19 +84,19 @@ mean_table <- function(.data, x, t_prob = 0.975, output = default, digits = 2, .
             "class was ", class(.data))
   }
 
-  if (missing(x)) {
-    stop("No argument was passed to the 'x' parameter. Expecting 'x' to be a ",
+  if (missing(.x)) {
+    stop("No argument was passed to the '.x' parameter. Expecting '.x' to be a ",
          "numeric column.")
   }
 
   # ===========================================================================
   # Enquo arguments
-  # enquo the x argument so that it can be used in the dplyr pipeline below.
-  # The x argument is the variable you want the mean of.
+  # enquo the .x argument so that it can be used in the dplyr pipeline below.
+  # The .x argument is the variable you want the mean of.
   # enquo/quo_name/UQ the output argument so that I don't have to use
   # quotation marks around the argument being passed.
   # ===========================================================================
-  x          <- rlang::enquo(x)
+  .x          <- rlang::enquo(.x)
   output_arg <- rlang::enquo(output) %>% rlang::quo_name()
 
   # ===========================================================================
@@ -121,31 +123,30 @@ mean_table <- function(.data, x, t_prob = 0.975, output = default, digits = 2, .
   }
 
   # ===========================================================================
-  # First, create a general summary table of means and related stats. Then, add
+  # Create a general summary table of means and related stats. Then, add
   # group variable names to summary table where applicable
   # 1. No group_by variables
   # 2. One group_by variable
   # 3. Two group_by variables
   # ===========================================================================
   out <- .data %>%
-    # Drop missing
-    dplyr::filter(!is.na(!! x)) %>%
     dplyr::summarise(
-      # Grab variable (x) name
-      response_var = rlang::quo_name(x),
-      # Count missing from before drop
-      n_miss   = is.na(.data[[rlang::quo_name(x)]]) %>% sum(),
-      n        = n(),
-      mean     = mean(!! x),
-      t_crit   = stats::qt(t_prob, n - 1),
-      sem      = stats::sd(!! x) / sqrt(n),
-      lcl      = mean - t_crit * sem,
-      ucl      = mean + t_crit * sem,
-      mean     = round(mean, digits),   # Round mean
-      lcl      = round(lcl, digits),    # Round lcl
-      ucl      = round(ucl, digits),    # Round ucl
-      min      = min(!! x),
-      max      = max(!! x)
+      # Grab variable (.x) name
+      response_var = rlang::quo_name(.x),
+      n_miss       = sum(is.na(.data[[rlang::quo_name(.x)]])),
+      n            = sum(!is.na(.data[[rlang::quo_name(.x)]])),
+      mean         = mean(!! .x, na.rm = TRUE),
+      sd           = stats::sd(!! .x, na.rm = TRUE),
+      t_crit       = stats::qt(t_prob, n - 1),
+      sem          = sd / sqrt(n),
+      lcl          = mean - t_crit * sem,
+      ucl          = mean + t_crit * sem,
+      mean         = round(mean, digits),   # Round mean
+      sd           = round(sd, digits),     # Round sd
+      lcl          = round(lcl, digits),    # Round lcl
+      ucl          = round(ucl, digits),    # Round ucl
+      min          = min(!! .x, na.rm = TRUE),
+      max          = max(!! .x, na.rm = TRUE)
     ) %>%
     tibble::as_tibble()
 
@@ -156,9 +157,9 @@ mean_table <- function(.data, x, t_prob = 0.975, output = default, digits = 2, .
   # Also add classes to "out"
   # If the input data frame (.data) was a grouped data frame, then the output
   # will be a bivariate analysis of means ("mean_table_grouped"). Pass that
-  # information on to "out." It can be used later in format_table.
+  # information on to "out." It can be used later in mean_format.
   # Otherwise the output will be a univariate analysis of means ("mean_table")
-  # That class will also be used later in format_table.
+  # That class will also be used later in mean_format.
   # ===========================================================================
   if (n_groups == 0) {
 
